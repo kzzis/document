@@ -5,128 +5,91 @@
 
 ---
 
-## 1. 現状の課題（Classic ASP の構成）
+## 1. 現行システムの構成を整理する
 
-現行システムは Classic ASP で構築されており、ファイルの役割をサフィックスで区別する命名規則を採用している。
-
-### 現行命名規則の例
+現行は Classic ASP で、ファイルの役割をサフィックスで区別している。
 
 | サフィックス | 役割 | 例 |
 |---|---|---|
 | `f` | 画面（フォーム） | `123f.asp` |
-| `b` | DBアクセス（バックエンド処理） | `123b.asp` |
+| `b` | DBアクセス | `123b.asp` |
 | `w` | モーダル・サブウィンドウ | `123w.asp` |
 
-メニュー単位では `Resw`（埼玉工場業務）のようなグループ名で機能をまとめているが、**ファイルの物理的な配置は機能ではなく種別（f/b/w）で分散**している。
-
-### この構成の問題点
-
-- **関連ファイルが離れている**  
-  ある機能を修正するとき、`123f`・`123b`・`123w` を別々に探す必要がある。
-
-- **影響範囲が把握しにくい**  
-  `123b` を変更したとき、どの画面（f）から呼ばれているか追跡が困難。
-
-- **新メンバーが迷う**  
-  ファイル命名規則を知らないと、どこに何があるか判断できない。
-
-- **機能追加のたびに横断的な変更が発生する**  
-  1つの機能を追加するだけで、複数の種別ディレクトリに散らばったファイルを触ることになる。
+メニュー単位では `Resw`（埼玉工場業務）のようなグループ名で機能をまとめており、
+**「メニュー名で業務を把握する」という感覚は、チームにすでに根付いている。**
 
 ---
 
-## 2. Feature-based アーキテクチャとは
+## 2. React + Vite への移行でやりたいこと
 
-> **「機能（Feature）を軸にファイルを集約する」** 設計思想。
+この「メニュー名で業務を把握する」感覚を、そのままディレクトリ構造に持ち込む。
 
-種別（画面/DB/モーダル）ではなく、**業務機能ごとにディレクトリを切る**。
-1つの機能に関係するすべてのファイルが1か所に集まる。
+> **業務メニューの単位 ＝ Feature ディレクトリの単位**
 
-### 考え方の対比
-
-```
-【現行 Classic ASP：種別軸】          【Feature-based：機能軸】
-
-/pages/                               /features/
-  123f.asp  ← 受注入力 画面              saitama-orders/       ← 受注管理（埼玉）
-  456f.asp  ← 在庫照会 画面                ├── OrderForm.tsx       画面
-  123b.asp  ← 受注入力 DBアクセス           ├── orderApi.ts         APIアクセス
-  456b.asp  ← 在庫照会 DBアクセス           ├── OrderDetailModal.tsx モーダル
-  123w.asp  ← 受注入力 モーダル             ├── useOrderForm.ts     ロジック
-  456w.asp  ← 在庫照会 モーダル             └── index.ts            公開IF
-                                        saitama-inventory/    ← 在庫照会（埼玉）
-                                          ├── InventoryList.tsx
-                                          ├── inventoryApi.ts
-                                          └── index.ts
-```
+サフィックス（f/b/w）が担っていた役割分担は、Feature 内のサブディレクトリで表現する。
+命名規則を覚えなくても、**メニュー名を知っていればコードが探せる**構成にする。
 
 ---
 
-## 3. 提案するディレクトリ構成
+## 3. 構成の対応イメージ
 
-現行の **ASPメニュー名 → Feature ディレクトリ名** に対応させる。
+```
+【ASP の感覚】                        【Feature-based の構成】
+
+Resw（埼玉工場業務）
+  ├── 受注管理                →    features/saitama-orders/
+  │     123f（画面）          →      components/OrderForm.tsx
+  │     123b（DBアクセス）    →      api/orderApi.ts
+  │     123w（モーダル）      →      components/OrderDetailModal.tsx
+  │
+  ├── 在庫照会                →    features/saitama-inventory/
+  └── 出荷指示                →    features/saitama-shipping/
+```
+
+メニューを開いたら機能があった、というASPの構造を、ディレクトリでそのまま再現する。
+
+---
+
+## 4. 提案するディレクトリ構成
 
 ```
 src/
-├── features/                        ← 業務機能の本体（ここが中心）
+├── features/                        ← 業務機能の本体
 │   │
-│   ├── saitama-orders/              ← Resw「埼玉工場業務 > 受注管理」に相当
+│   ├── saitama-orders/              ← Resw「受注管理」
 │   │   ├── components/
-│   │   │   ├── OrderForm.tsx        ← 旧 123f.asp（入力画面）
-│   │   │   ├── OrderDetailModal.tsx ← 旧 123w.asp（モーダル）
-│   │   │   └── OrderTable.tsx
-│   │   ├── hooks/
-│   │   │   └── useOrderForm.ts      ← フォームのロジック
+│   │   │   ├── OrderForm.tsx        ← 旧 123f（入力画面）
+│   │   │   └── OrderDetailModal.tsx ← 旧 123w（モーダル）
 │   │   ├── api/
-│   │   │   └── orderApi.ts          ← 旧 123b.asp（DBアクセス）
+│   │   │   └── orderApi.ts          ← 旧 123b（DBアクセス）
+│   │   ├── hooks/
+│   │   │   └── useOrderForm.ts      ← 画面ロジック・状態管理
 │   │   ├── types/
 │   │   │   └── order.ts
 │   │   └── index.ts                 ← 外部への公開インターフェース
 │   │
-│   ├── saitama-inventory/           ← Resw「埼玉工場業務 > 在庫照会」に相当
-│   │   ├── components/
-│   │   ├── hooks/
-│   │   ├── api/
-│   │   └── index.ts
-│   │
-│   └── （他メニュー機能）
+│   ├── saitama-inventory/           ← Resw「在庫照会」
+│   └── saitama-shipping/            ← Resw「出荷指示」
 │
 ├── shared/                          ← 複数 Feature をまたぐ共通部品
-│   ├── components/                  ← 汎用UIコンポーネント（ボタン、テーブル等）
-│   ├── hooks/                       ← 汎用フック
-│   ├── utils/                       ← 共通ユーティリティ
-│   └── types/                       ← 共通型定義
+│   ├── components/                  ← 汎用UIコンポーネント
+│   ├── hooks/
+│   ├── utils/
+│   └── types/
 │
 ├── pages/                           ← ルーティング用の薄いページ層
-│   ├── SaitamaOrdersPage.tsx        ← features/saitama-orders を呼ぶだけ
-│   └── SaitamaInventoryPage.tsx
+│   └── SaitamaOrdersPage.tsx        ← features を呼ぶだけ
 │
 └── app/
-    ├── router.tsx                   ← ルート定義
+    ├── router.tsx
     └── App.tsx
-```
-
-### ASPメニューとの対応イメージ
-
-```
-【ASP メニュー構造】              【Feature ディレクトリ】
-
-Resw（埼玉工場業務）
-  ├── 受注管理          →    features/saitama-orders/
-  ├── 在庫照会          →    features/saitama-inventory/
-  ├── 出荷指示          →    features/saitama-shipping/
-  └── 仕掛品確認        →    features/saitama-wip/
-
-（他工場・他メニューも同様）
 ```
 
 ---
 
-## 4. Feature 内部の責務分担
+## 5. Feature 内の責務分担
 
-旧来の `f / b / w` サフィックスが担っていた役割を、Feature 内の**サブディレクトリ**で明示的に表現する。
-
-| 旧 ASP | 新 Feature 内の位置 | 内容 |
+| 旧 ASP | Feature 内の位置 | 内容 |
 |---|---|---|
 | `123f.asp` | `components/OrderForm.tsx` | 入力・表示画面 |
 | `123b.asp` | `api/orderApi.ts` | APIコール・データ取得 |
@@ -134,89 +97,50 @@ Resw（埼玉工場業務）
 | ―（暗黙） | `hooks/useOrderForm.ts` | 画面ロジック・状態管理 |
 | ―（暗黙） | `types/order.ts` | 型定義 |
 
-**命名規則の暗記が不要になり、ディレクトリを見れば役割がわかる。**
+---
+
+## 6. 守るべきルール（依存の方向）
+
+Feature-based を機能させるために、依存の向きを一方向に保つ。
+
+```
+OK  pages/    → features/   （ページは Feature を呼ぶ）
+OK  features/ → shared/     （Feature は Shared を使う）
+
+NG  features/saitama-orders/ → features/saitama-inventory/
+    （Feature 同士の直接参照は避ける）
+```
+
+Feature 間で共通化したいものが出てきたら、`shared/` に昇格させるルールにする。
 
 ---
 
-## 5. 導入のメリット
+## 7. 段階的な進め方
 
-### 5-1. 変更の影響範囲が Feature 内に収まる
-
-受注管理の仕様変更は `features/saitama-orders/` の中だけを触ればよい。
-他 Feature への波及が起きにくく、**レビューと動作確認のスコープが明確**になる。
-
-### 5-2. 機能単位で担当を分けやすい
-
-```
-Aさん → features/saitama-orders/    を担当
-Bさん → features/saitama-inventory/ を担当
-```
-
-ファイルの衝突が減り、**並行開発がしやすい**。
-
-### 5-3. 削除・廃止が安全にできる
-
-機能を廃止するとき、`features/該当機能/` ディレクトリを丸ごと削除すればよい。
-横断的なファイルを探し回る必要がない。
-
-### 5-4. 新メンバーが迷わない
-
-「どのメニューの画面？」→「その Feature ディレクトリを開く」  
-ASP時代のサフィックス規則を覚えなくても、**業務知識でコードが探せる**。
-
-### 5-5. テストが書きやすい
-
-Feature 単位で API・ロジック・UIが揃っているため、  
-`features/saitama-orders/__tests__/` にまとめてテストを置ける。
-
----
-
-## 6. 守るべきルール（依存方向）
-
-Feature-based を機能させるために、**依存の向きを一方向に保つ**ことが重要。
-
-```
-【OK】
-pages/        → features/（ページはFeatureを呼ぶ）
-features/     → shared/（FeatureはSharedを使う）
-
-【NG：やってはいけない】
-features/saitama-orders/  →  features/saitama-inventory/
-（Feature同士が直接参照し合うと、Classic ASPと同じ問題が再発する）
-```
-
-Feature 間で共通化したいものが出てきたら、**`shared/` に昇格させる**ルールにする。
-
----
-
-## 7. 段階的な移行イメージ
-
-いきなり全機能を作り直す必要はない。新規画面から Feature-based で作り始め、既存機能は必要に応じて順次移行する。
+新規画面から始めて、必要に応じて順次移行していく。
 
 ```
 Phase 1（新規開発）
   新しい画面・機能は最初から Feature-based で作る
 
 Phase 2（順次移行）
-  改修が発生した既存機能を Feature-based に切り出す
+  改修が発生した機能を Feature-based に切り出す
   ※ 触らない機能は無理に移行しない
 
 Phase 3（整理）
-  shared/ の共通部品を整備し、チーム全体のルールとして定着させる
+  shared/ の共通部品を整備し、チームのルールとして定着させる
 ```
 
 ---
 
 ## 8. まとめ
 
-| 観点 | Classic ASP（現行） | React + Feature-based（提案） |
+| 観点 | 現行 ASP | React + Feature-based |
 |---|---|---|
-| ファイルの探し方 | サフィックス（f/b/w）を覚える | メニュー名 → Feature ディレクトリを開く |
-| 変更の影響範囲 | 種別をまたいで散在 | Feature 内に集約 |
-| 並行開発 | ファイル衝突が起きやすい | Feature 単位で分担しやすい |
-| 機能の廃止 | 横断的なファイルを探す | ディレクトリを丸ごと削除 |
-| 新メンバーの習熟 | 命名規則の暗記が必要 | 業務知識だけで探せる |
+| ファイルの探し方 | サフィックス（f/b/w）で判断 | メニュー名 → Feature ディレクトリ |
+| 変更のまとまり | 役割別に分散 | Feature 内に集約 |
+| 並行開発 | Feature 単位で分担しやすい | Feature 単位で分担しやすい |
+| 新メンバーの習熟 | 命名規則を覚える | 業務知識だけで探せる |
 
-**ASP時代の「メニュー名で業務を把握する」感覚をそのまま引き継ぎながら、  
-モダンな構成でチームが迷わず開発できる土台を作る。**  
-それが Feature-based アーキテクチャ導入の狙いです。
+**ASP 時代に培った「メニュー＝機能のまとまり」という感覚をそのまま引き継いで、
+React でも同じように業務単位でコードを整理できる構成にする。**
