@@ -1,0 +1,537 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>データベース設計の基本</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700;800&family=Inter:wght@400;500;600;700&family=Noto+Sans+JP:wght@400;500;700;900&display=swap');
+
+  :root{
+    --bg: #0B1220;
+    --bg-alt: #111A2E;
+    --panel: #14213A;
+    --line: rgba(94,234,212,0.18);
+    --accent: #5EEAD4;
+    --accent2: #F0B429;
+    --text: #E7ECF3;
+    --muted: #8A93A6;
+    --danger: #F0716B;
+  }
+  *{ box-sizing: border-box; }
+  html,body{
+    margin:0; padding:0; height:100%;
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'Inter','Noto Sans JP',sans-serif;
+    overflow: hidden;
+  }
+  .grid-bg{
+    position: fixed; inset:0;
+    background-image:
+      linear-gradient(var(--line) 1px, transparent 1px),
+      linear-gradient(90deg, var(--line) 1px, transparent 1px);
+    background-size: 42px 42px;
+    opacity: 0.5;
+    pointer-events: none;
+    z-index:0;
+  }
+  .deck{
+    position: relative;
+    z-index: 1;
+    height: 100vh;
+    width: 100vw;
+  }
+  .slide{
+    position: absolute;
+    inset:0;
+    display:none;
+    flex-direction: column;
+    justify-content:center;
+    padding: 6vh 8vw;
+    opacity:0;
+    transform: translateX(24px);
+    transition: opacity .35s ease, transform .35s ease;
+  }
+  .slide.active{
+    display:flex;
+    opacity:1;
+    transform: translateX(0);
+  }
+  .eyebrow{
+    font-family:'JetBrains Mono',monospace;
+    font-size: 13px;
+    letter-spacing: 3px;
+    color: var(--accent);
+    text-transform: uppercase;
+    margin-bottom: 18px;
+    display:flex;
+    align-items:center;
+    gap: 10px;
+  }
+  .eyebrow::before{
+    content:"";
+    width: 22px; height: 1px;
+    background: var(--accent);
+    display:inline-block;
+  }
+  h1{
+    font-family:'JetBrains Mono',monospace;
+    font-weight: 800;
+    font-size: clamp(32px, 4.2vw, 58px);
+    line-height:1.15;
+    margin: 0 0 20px 0;
+    color:#fff;
+    letter-spacing: -0.5px;
+  }
+  h2{
+    font-family:'JetBrains Mono',monospace;
+    font-weight: 700;
+    font-size: clamp(24px, 2.6vw, 36px);
+    margin: 0 0 28px 0;
+    color:#fff;
+  }
+  .sub{
+    font-size: clamp(15px, 1.3vw, 19px);
+    color: var(--muted);
+    max-width: 720px;
+    line-height:1.7;
+    margin-bottom: 8px;
+  }
+  .content-row{
+    display:flex;
+    gap: 48px;
+    align-items:flex-start;
+    flex: 1;
+    min-height:0;
+  }
+  .col{ flex:1; min-width:0; }
+  ul.points{
+    list-style:none;
+    padding:0; margin:0;
+  }
+  ul.points li{
+    position:relative;
+    padding: 14px 0 14px 32px;
+    border-bottom: 1px solid rgba(255,255,255,0.06);
+    font-size: clamp(15px,1.25vw,18px);
+    line-height:1.6;
+  }
+  ul.points li::before{
+    content: attr(data-n);
+    position:absolute; left:0; top:14px;
+    font-family:'JetBrains Mono',monospace;
+    color: var(--accent2);
+    font-weight:700;
+    font-size:14px;
+  }
+  ul.points b{ color:#fff; }
+  .points .desc{ color: var(--muted); font-size: 0.92em; display:block; margin-top:4px;}
+
+  .schema-box{
+    background: var(--panel);
+    border: 1px solid var(--line);
+    border-radius: 6px;
+    padding: 20px;
+    font-family:'JetBrains Mono',monospace;
+    font-size: 14px;
+  }
+  .schema-box .tname{
+    color: var(--accent);
+    font-weight:700;
+    border-bottom: 1px dashed var(--line);
+    padding-bottom:8px;
+    margin-bottom:8px;
+    display:flex;
+    justify-content: space-between;
+  }
+  .schema-box .fld{ color: var(--text); padding:3px 0; display:flex; justify-content:space-between; }
+  .schema-box .fld .type{ color: var(--muted); }
+  .schema-box .fld.pk .fname::before{ content:"PK "; color: var(--accent2); }
+  .schema-box .fld.fk .fname::before{ content:"FK "; color: #9db4ff; }
+
+  .er-stage{
+    position:relative;
+    flex:1;
+    min-height: 340px;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+  }
+  .er-box{
+    background: var(--panel);
+    border: 1px solid var(--accent);
+    border-radius: 4px;
+    font-family:'JetBrains Mono',monospace;
+    font-size: 13px;
+    width: 190px;
+    box-shadow: 0 0 0 3px rgba(94,234,212,0.06);
+  }
+  .er-box .hd{
+    background: rgba(94,234,212,0.12);
+    color: var(--accent);
+    font-weight:700;
+    padding: 8px 10px;
+    border-bottom:1px solid var(--line);
+  }
+  .er-box .bd{ padding: 8px 10px; color: var(--muted); }
+  .er-box .bd div{ padding: 2px 0; color: var(--text); }
+  .er-box .bd div.k{ color: var(--accent2); }
+
+  .flow{ display:flex; align-items:center; gap:14px; flex-wrap:wrap; }
+  .flow .step{
+    background: var(--panel);
+    border:1px solid var(--line);
+    border-radius: 6px;
+    padding: 18px 22px;
+    font-family:'JetBrains Mono',monospace;
+    text-align:center;
+    min-width: 150px;
+  }
+  .flow .step .t{ color:#fff; font-weight:700; font-size:15px; }
+  .flow .step .d{ color: var(--muted); font-size:12px; margin-top:6px; }
+  .flow .arrow{ color: var(--accent); font-size:20px; }
+
+  table.dtab{
+    width:100%;
+    border-collapse: collapse;
+    font-size: 14px;
+  }
+  table.dtab th{
+    font-family:'JetBrains Mono',monospace;
+    text-align:left;
+    color: var(--accent);
+    border-bottom: 1px solid var(--line);
+    padding: 8px 10px;
+    font-size:12px;
+    letter-spacing:1px;
+    text-transform:uppercase;
+  }
+  table.dtab td{
+    padding: 10px 10px;
+    border-bottom: 1px solid rgba(255,255,255,0.06);
+    color: var(--text);
+    vertical-align:top;
+  }
+  table.dtab td.mono{ font-family:'JetBrains Mono',monospace; color: var(--accent2); white-space:nowrap;}
+  .badge{
+    display:inline-block;
+    font-family:'JetBrains Mono',monospace;
+    font-size: 11px;
+    padding: 3px 8px;
+    border-radius: 3px;
+    border: 1px solid var(--accent);
+    color: var(--accent);
+    margin-right:6px;
+  }
+  .badge.warn{ border-color: var(--danger); color: var(--danger); }
+  .badge.gold{ border-color: var(--accent2); color: var(--accent2); }
+
+  .footer{
+    position:fixed; bottom: 22px; left:8vw; right:8vw;
+    display:flex; align-items:center; justify-content:space-between;
+    z-index:2;
+    font-family:'JetBrains Mono',monospace;
+    font-size:12px; color: var(--muted);
+  }
+  .dots{ display:flex; gap:7px; }
+  .dot{
+    width:7px; height:7px; border-radius:50%;
+    background: rgba(255,255,255,0.15);
+    transition: all .25s;
+  }
+  .dot.on{ background: var(--accent); width:20px; border-radius:4px; }
+  .navhint{ opacity:0.6; }
+
+  .kicker-num{
+    position:absolute;
+    top: 6vh; right: 8vw;
+    font-family:'JetBrains Mono',monospace;
+    font-size: 13px;
+    color: var(--muted);
+  }
+
+  .two-tables{ display:flex; gap: 26px; flex-wrap:wrap; }
+
+  @media (max-width: 760px){
+    .content-row{ flex-direction:column; }
+    .er-stage{ min-height:220px; }
+  }
+</style>
+</head>
+<body>
+<div class="grid-bg"></div>
+<div class="deck" id="deck"></div>
+<div class="footer">
+  <div class="navhint">← → または クリックでスライドを移動</div>
+  <div class="dots" id="dots"></div>
+  <div id="pagenum">01 / 11</div>
+</div>
+
+<script>
+const slides = [
+// 1
+`<div class="kicker-num">SCHEMA / 01</div>
+<div class="eyebrow">DATABASE DESIGN</div>
+<h1>データベース設計の基本</h1>
+<p class="sub">概念設計・論理設計・物理設計 — E-R図から正規化、インデックスまで。<br>業務要件をテーブル構造に落とし込むための考え方を一通り押さえる。</p>`,
+
+// 2
+`<div class="kicker-num">02</div>
+<div class="eyebrow">Design Process</div>
+<h2>設計は3段階で進む</h2>
+<div class="flow">
+  <div class="step"><div class="t">概念設計</div><div class="d">業務を理解し<br>E-R図を描く</div></div>
+  <div class="arrow">→</div>
+  <div class="step"><div class="t">論理設計</div><div class="d">正規化して<br>テーブルを定義</div></div>
+  <div class="arrow">→</div>
+  <div class="step"><div class="t">物理設計</div><div class="d">型・索引・制約を<br>DBMSに実装</div></div>
+</div>
+<p class="sub" style="margin-top:36px;">上流ほど「人間が理解できる形」、下流ほど「DBMSが実行できる形」に近づく。<br>手戻りを防ぐには、概念設計を飛ばさないことが重要。</p>`,
+
+// 3
+`<div class="kicker-num">03</div>
+<div class="eyebrow">Conceptual Design</div>
+<h2>概念設計 — E-R図</h2>
+<div class="content-row">
+  <div class="col">
+    <ul class="points">
+      <li data-n="01"><b>エンティティ</b><span class="desc">管理したい対象(顧客・注文・商品など)</span></li>
+      <li data-n="02"><b>属性</b><span class="desc">エンティティが持つ情報(氏名・単価など)</span></li>
+      <li data-n="03"><b>リレーションシップ</b><span class="desc">エンティティ間のつながり方(誰が何を注文したか)</span></li>
+    </ul>
+  </div>
+  <div class="col er-stage">
+    <div style="display:flex; align-items:center; gap:10px;">
+      <div class="er-box"><div class="hd">顧客</div><div class="bd"><div class="k">顧客ID</div><div>氏名</div><div>住所</div></div></div>
+      <div style="color:var(--accent); font-family:'JetBrains Mono',monospace; font-size:12px;">1─N</div>
+      <div class="er-box"><div class="hd">注文</div><div class="bd"><div class="k">注文ID</div><div>顧客ID</div><div>注文日</div></div></div>
+      <div style="color:var(--accent); font-family:'JetBrains Mono',monospace; font-size:12px;">N─1</div>
+      <div class="er-box"><div class="hd">商品</div><div class="bd"><div class="k">商品ID</div><div>商品名</div><div>単価</div></div></div>
+    </div>
+  </div>
+</div>`,
+
+// 4
+`<div class="kicker-num">04</div>
+<div class="eyebrow">Relationships</div>
+<h2>リレーションシップの種類</h2>
+<table class="dtab">
+  <tr><th>種類</th><th>意味</th><th>具体例</th></tr>
+  <tr><td class="mono">1 : 1</td><td>一方に対応するのは相手も1件だけ</td><td>社員 ─ 社員証</td></tr>
+  <tr><td class="mono">1 : N</td><td>一方に対し相手は複数存在しうる</td><td>顧客 ─ 注文</td></tr>
+  <tr><td class="mono">N : N</td><td>双方が複数対応する。中間テーブルが必要</td><td>注文 ─ 商品(注文明細を介す)</td></tr>
+</table>
+<p class="sub" style="margin-top:28px;">N:Nはそのままではテーブルにできないため、間に「注文明細」のような<b style="color:#fff;">中間エンティティ</b>を挟んで1:N × 1:Nに分解する。</p>`,
+
+// 5
+`<div class="kicker-num">05</div>
+<div class="eyebrow">Logical Design</div>
+<h2>論理設計 — なぜ正規化するのか</h2>
+<div class="content-row">
+  <div class="col">
+    <ul class="points">
+      <li data-n="01"><b>更新異常の防止</b><span class="desc">同じ情報が複数箇所にあると、更新漏れで矛盾が起きる</span></li>
+      <li data-n="02"><b>重複の排除</b><span class="desc">ディスク容量とメンテナンスコストを削減</span></li>
+      <li data-n="03"><b>整合性の担保</b><span class="desc">1つの事実は1箇所にのみ存在させる</span></li>
+    </ul>
+  </div>
+  <div class="col">
+    <div class="schema-box">
+      <div class="tname">注文明細(非正規化)<span class="badge warn">問題あり</span></div>
+      <div class="fld"><span class="fname">注文ID</span><span class="type">int</span></div>
+      <div class="fld"><span class="fname">商品ID</span><span class="type">int</span></div>
+      <div class="fld"><span class="fname">商品名</span><span class="type">varchar</span></div>
+      <div class="fld"><span class="fname">単価</span><span class="type">int</span></div>
+    </div>
+    <p class="sub" style="margin-top:14px; font-size:13px;">商品名や単価を注文明細に持つと、単価変更のたびに全行を更新する必要が出る。</p>
+  </div>
+</div>`,
+
+// 6
+`<div class="kicker-num">06</div>
+<div class="eyebrow">Normalization</div>
+<h2>正規化の段階</h2>
+<table class="dtab">
+  <tr><th>段階</th><th>条件</th><th>やること</th></tr>
+  <tr><td class="mono">第1正規形</td><td>繰り返し項目がない</td><td>1セルに複数の値を入れない(配列を分割)</td></tr>
+  <tr><td class="mono">第2正規形</td><td>部分関数従属がない</td><td>複合キーの一部にしか依存しない列を分離</td></tr>
+  <tr><td class="mono">第3正規形</td><td>推移的関数従属がない</td><td>主キー以外の列に依存する列を別テーブルへ</td></tr>
+</table>
+<p class="sub" style="margin-top:28px;">実務では<b style="color:#fff;">第3正規形</b>まで整えれば十分なケースが多い。<br>ただし検索性能のためにあえて非正規化することもある(後述)。</p>`,
+
+// 7
+`<div class="kicker-num">07</div>
+<div class="eyebrow">Normalization / Example</div>
+<h2>正規化の例:注文明細</h2>
+<div class="two-tables">
+  <div class="schema-box" style="min-width:260px;">
+    <div class="tname">Before<span class="badge warn">非正規化</span></div>
+    <div class="fld"><span class="fname">注文ID</span><span class="type">int</span></div>
+    <div class="fld"><span class="fname">商品ID</span><span class="type">int</span></div>
+    <div class="fld"><span class="fname">商品名</span><span class="type">varchar</span></div>
+    <div class="fld"><span class="fname">単価</span><span class="type">int</span></div>
+    <div class="fld"><span class="fname">数量</span><span class="type">int</span></div>
+  </div>
+  <div class="schema-box" style="min-width:220px;">
+    <div class="tname">After<span class="badge gold">正規化</span></div>
+    <div class="fld pk"><span class="fname">注文明細ID</span><span class="type">int</span></div>
+    <div class="fld fk"><span class="fname">注文ID</span><span class="type">int</span></div>
+    <div class="fld fk"><span class="fname">商品ID</span><span class="type">int</span></div>
+    <div class="fld"><span class="fname">数量</span><span class="type">int</span></div>
+  </div>
+  <div class="schema-box" style="min-width:220px;">
+    <div class="tname">商品マスタ</div>
+    <div class="fld pk"><span class="fname">商品ID</span><span class="type">int</span></div>
+    <div class="fld"><span class="fname">商品名</span><span class="type">varchar</span></div>
+    <div class="fld"><span class="fname">単価</span><span class="type">int</span></div>
+  </div>
+</div>
+<p class="sub" style="margin-top:24px;">商品名・単価を商品マスタに切り出すことで、単価変更は1箇所の更新で済む。</p>`,
+
+// 8
+`<div class="kicker-num">08</div>
+<div class="eyebrow">Physical Design</div>
+<h2>物理設計 — テーブル定義</h2>
+<div class="content-row">
+  <div class="col">
+    <ul class="points">
+      <li data-n="01"><b>データ型の選定</b><span class="desc">桁数・範囲・NULL許容を業務要件に合わせて決める</span></li>
+      <li data-n="02"><b>命名規則の統一</b><span class="desc">テーブル名・列名の単数/複数、スネークケースなどをプロジェクトで統一</span></li>
+      <li data-n="03"><b>格納方式の考慮</b><span class="desc">想定件数・アクセス頻度に応じてパーティショニングなども検討</span></li>
+    </ul>
+  </div>
+  <div class="col">
+    <table class="dtab">
+      <tr><th>用途</th><th>型の例</th></tr>
+      <tr><td>連番ID</td><td class="mono">bigint / identity</td></tr>
+      <tr><td>金額</td><td class="mono">decimal(整数演算での誤差回避)</td></tr>
+      <tr><td>日時</td><td class="mono">timestamp with time zone</td></tr>
+      <tr><td>ステータス</td><td class="mono">enum / 参照テーブル</td></tr>
+    </table>
+  </div>
+</div>`,
+
+// 9
+`<div class="kicker-num">09</div>
+<div class="eyebrow">Keys & Constraints</div>
+<h2>制約とキー設計</h2>
+<table class="dtab">
+  <tr><th>制約</th><th>役割</th></tr>
+  <tr><td class="mono">PRIMARY KEY</td><td>行を一意に識別する。NULL不可・重複不可</td></tr>
+  <tr><td class="mono">FOREIGN KEY</td><td>他テーブルとの参照整合性を保証する</td></tr>
+  <tr><td class="mono">UNIQUE</td><td>PK以外で重複を許さない列(メールアドレス等)</td></tr>
+  <tr><td class="mono">NOT NULL</td><td>必須項目の入力漏れをDB側で防ぐ</td></tr>
+  <tr><td class="mono">CHECK</td><td>値の範囲や形式を制限する</td></tr>
+</table>
+<p class="sub" style="margin-top:28px;">制約はアプリ側のバリデーションと二重になっても<b style="color:#fff;">DB側に必ず持たせる</b>。<br>複数システム・複数経路からの書き込みでも整合性が崩れなくなる。</p>`,
+
+// 10
+`<div class="kicker-num">10</div>
+<div class="eyebrow">Foreign Key / Implementation</div>
+<h2>フォーリンキーの実装例</h2>
+<div class="content-row">
+  <div class="col">
+    <div class="schema-box" style="font-size:13px;">
+      <div class="tname">DDL (PostgreSQL)<span class="badge">SQL</span></div>
+      <pre style="margin:0; white-space:pre-wrap; color:var(--text); line-height:1.7;"><span style="color:var(--accent2);">CREATE TABLE</span> orders (
+  order_id    bigint <span style="color:var(--accent2);">PRIMARY KEY</span>,
+  customer_id bigint <span style="color:var(--accent2);">NOT NULL</span>,
+  <span style="color:var(--accent2);">CONSTRAINT</span> fk_orders_customer
+    <span style="color:var(--accent2);">FOREIGN KEY</span> (customer_id)
+    <span style="color:var(--accent2);">REFERENCES</span> customers(customer_id)
+    <span style="color:var(--accent2);">ON DELETE RESTRICT</span>
+    <span style="color:var(--accent2);">ON UPDATE CASCADE</span>
+);</pre>
+    </div>
+    <p class="sub" style="margin-top:14px; font-size:13px;">既存テーブルに後から追加する場合は<span style="color:var(--accent2);">ALTER TABLE ... ADD CONSTRAINT</span>を使う。</p>
+  </div>
+  <div class="col">
+    <ul class="points">
+      <li data-n="01"><b>ON DELETE の挙動を決める</b><span class="desc">RESTRICT(削除不可)/ CASCADE(連動削除)/ SET NULL(NULLに)を業務ルールで選ぶ</span></li>
+      <li data-n="02"><b>参照先には索引が必須</b><span class="desc">customers.customer_id は通常PKなので自動的にインデックスが付く</span></li>
+      <li data-n="03"><b>参照元にも索引を張る</b><span class="desc">orders.customer_id にもインデックスがないとJOINや削除確認が遅くなる</span></li>
+      <li data-n="04"><b>命名規則を決めておく</b><span class="desc">fk_&#123;子テーブル&#125;_&#123;親テーブル&#125; のように統一すると、エラー時に追いやすい</span></li>
+    </ul>
+  </div>
+</div>`,
+
+// 11
+`<div class="kicker-num">11</div>
+<div class="eyebrow">Indexing</div>
+<h2>インデックス設計</h2>
+<div class="content-row">
+  <div class="col">
+    <ul class="points">
+      <li data-n="01"><b>検索を高速化する</b><span class="desc">WHERE句やJOINで頻繁に使う列に張る</span></li>
+      <li data-n="02"><b>更新コストとのトレードオフ</b><span class="desc">INSERT/UPDATE/DELETEのたびにインデックスも更新される</span></li>
+      <li data-n="03"><b>複合インデックスは順序が重要</b><span class="desc">左から順に効くため、絞り込み条件の順番を意識する</span></li>
+    </ul>
+  </div>
+  <div class="col">
+    <div class="schema-box">
+      <div class="tname">よくある使いどころ<span class="badge">B-Tree</span></div>
+      <div class="fld"><span class="fname">外部キー列</span><span class="type">JOIN高速化</span></div>
+      <div class="fld"><span class="fname">検索条件の列</span><span class="type">WHERE高速化</span></div>
+      <div class="fld"><span class="fname">ソート対象の列</span><span class="type">ORDER BY高速化</span></div>
+    </div>
+    <p class="sub" style="margin-top:14px; font-size:13px;">「とりあえず全列に張る」は逆効果。実際のクエリパターンを見て設計する。</p>
+  </div>
+</div>`,
+
+// 12
+`<div class="kicker-num">12</div>
+<div class="eyebrow">Summary</div>
+<h2>設計の心構え</h2>
+<ul class="points">
+  <li data-n="01"><b>概念設計を省略しない</b><span class="desc">業務理解が曖昧なままテーブルを作ると後で必ず歪む</span></li>
+  <li data-n="02"><b>正規化はゴールではなく手段</b><span class="desc">整合性を保ちつつ、性能要件次第では意図的な非正規化もあり</span></li>
+  <li data-n="03"><b>制約はDBに語らせる</b><span class="desc">アプリ層だけに頼らず、PK/FK/CHECKで整合性を担保する</span></li>
+  <li data-n="04"><b>インデックスは実測して決める</b><span class="desc">実際のクエリと実行計画を見てから追加・削除する</span></li>
+</ul>
+<p class="sub" style="margin-top:32px;">既存システム(AS400等)からの移行では、現行のデータ構造をそのまま写すのではなく、<br>一度この4段階に立ち返って設計し直すと歪みが出にくい。</p>`
+];
+
+const deck = document.getElementById('deck');
+const dotsEl = document.getElementById('dots');
+const pageEl = document.getElementById('pagenum');
+let current = 0;
+
+slides.forEach((html, i) => {
+  const div = document.createElement('div');
+  div.className = 'slide' + (i===0 ? ' active' : '');
+  div.innerHTML = html;
+  deck.appendChild(div);
+  const dot = document.createElement('div');
+  dot.className = 'dot' + (i===0 ? ' on' : '');
+  dot.addEventListener('click', () => goTo(i));
+  dotsEl.appendChild(dot);
+});
+
+const slideEls = document.querySelectorAll('.slide');
+const dotEls = document.querySelectorAll('.dot');
+
+function goTo(i){
+  if(i < 0 || i >= slides.length) return;
+  slideEls[current].classList.remove('active');
+  dotEls[current].classList.remove('on');
+  current = i;
+  slideEls[current].classList.add('active');
+  dotEls[current].classList.add('on');
+  pageEl.textContent = String(current+1).padStart(2,'0') + ' / ' + slides.length;
+}
+
+document.addEventListener('keydown', (e) => {
+  if(e.key === 'ArrowRight' || e.key === ' ') goTo(current+1);
+  if(e.key === 'ArrowLeft') goTo(current-1);
+});
+
+deck.addEventListener('click', (e) => {
+  const rect = deck.getBoundingClientRect();
+  const x = e.clientX - rect.left;
+  if(x > rect.width/2) goTo(current+1);
+  else goTo(current-1);
+});
+</script>
+</body>
+</html>
