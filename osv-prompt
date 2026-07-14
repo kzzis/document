@@ -1,0 +1,60 @@
+OsvScanインストーラを実装してください。
+
+## 背景
+既存の `osv_scan.py`（社内PC向けPython/npm脆弱性スキャンスクリプト、実装済み・このスクリプト自体は変更不要）を、社内PCへ「exe配布 → ログオン時自動実行」できるようにするインストーラを新規作成します。
+配布方法はメール添付（zip化したexe）。Gitea等の外部サービスは使わず、社内ファイルサーバー(UNCパス)のみで完結させてください。
+
+## 全体構成
+- ファイルサーバー: `\\fileserver\share\osv_scan_dist\osv_scan.py`(配布元、手動更新) / `\\fileserver\share\osv_reports\`(結果アップロード先)
+- 各PC配置先: `%LOCALAPPDATA%\OsvScan\`(osv_scan.py, run_osv_scan.bat, installer_version.txt, last_scan_date.txt)
+- タスクスケジューラ: タスク名 `OsvScan_AtLogOn`、トリガー AtLogOn(現在ユーザースコープ、管理者権限不要)、実行内容は run_osv_scan.bat
+
+## 実装するファイル
+
+### 1. install_osv_scan.py(インストーラ本体、後でPyInstallerでexe化する前提)
+標準ライブラリのみで実装してください(PyInstaller配布時に余計な依存を持たせないため)。
+
+設定値はファイル冒頭で定数として定義し、環境に応じて書き換え可能にしてください:
+- SOURCE_UNC_PATH: osv_scan.pyの配布元
+- UPLOAD_UNC_PATH: スキャン結果のアップロード先
+- INSTALLER_VERSION: インストーラ自体のバージョン文字列
+- INSTALL_DIR: %LOCALAPPDATA%\OsvScan
+- TASK_NAME: OsvScan_AtLogOn
+
+コマンドライン引数:
+- 引数なし → インストール/更新
+- --uninstall → アンインストール
+
+install()の処理:
+1. INSTALL_DIRを作成
+2. SOURCE_UNC_PATHからosv_scan.pyをINSTALL_DIRにコピー。失敗時はエラーメッセージを出してexit code 1で終了
+3. run_osv_scan.batを生成(仕様は下記)
+4. installer_version.txtにINSTALLER_VERSIONを書き込み
+5. 既存タスクがあれば削除してから、schtasks.exeをsubprocess経由で呼んでタスクスケジューラに登録
+   (schtasks /create /tn OsvScan_AtLogOn /tr "<run_osv_scan.batの絶対パス>" /sc onlogon /rl limited /f)
+   PowerShellのRegister-ScheduledTaskは使わないこと。
+
+uninstall()の処理:
+1. schtasks /delete /tn OsvScan_AtLogOn /f でタスク削除
+2. INSTALL_DIRを再帰削除
+
+ログは [OsvScanInstaller] ... の形式で標準出力に出してください。
+
+### 2. run_osv_scan.bat(インストーラが文字列テンプレートとして埋め込み、インストール時に書き出す)
+処理フロー:
+1. カレントディレクトリを自分自身のフォルダに移動
+2. last_scan_date.txtを読み、今日の日付(YYYYMMDD)と比較。一致すれば「本日は実行済み」と表示して終了(スキャンは1日1回のみ)
+3. SOURCE_UNC_PATHからosv_scan.pyを上書きコピー(最新版への追従)。失敗時はエラー表示しつつローカルの既存osv_scan.pyで処理を継続すること(スキャン自体は止めない)
+4. python osv_scan.py --upload <UPLOAD_UNC_PATH> を実行
+5. 成功後、last_scan_date.txtに今日の日付を書き込む
+
+## 非対象(フェーズ2、実装しないでください)
+- SBOM(CycloneDX)との突合機能
+- レポート未提出PCの自動検知
+
+## 動作確認したいこと
+- exe実行でINSTALL_DIRにファイルが揃う
+- タスクスケジューラにOsvScan_AtLogOnが登録される
+- 同日中の再ログオンでは再スキャンされない
+- 共有フォルダのosv_scan.py更新が翌日以降のスキャンに反映される
+- --uninstallでタスクとフォルダが削除される
